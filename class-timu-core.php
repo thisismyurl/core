@@ -1,8 +1,10 @@
 <?php
 /**
  * TIMU Shared Core Library
- * Version: 1.3.0
+ * Version: 1.260101
  * Author: thisismyurl.com
+ * 
+ * 
  */
 
 if ( ! class_exists( 'TIMU_Core_v1' ) ) {

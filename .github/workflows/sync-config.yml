@@ -1,0 +1,13 @@
+group:
+  - files:
+      - source: class-timu-core.php
+        dest: core/class-timu-core.php
+      
+      - source: assets/
+        dest: core/assets/
+        
+    repos:
+      - thisismyurl/thisismyurl-svg-support
+      - thisismyurl/thisismyurl-webp-support
+      - thisismyurl/thisismyurl-heic-support
+      - thisismyurl/thisismyurl-external-link-control

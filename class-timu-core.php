@@ -1,7 +1,7 @@
 <?php
 /**
  * TIMU Shared Core Library
- * Version: 1.3.7
+ * Version: 1.260101
  * Author: thisismyurl.com
  */
 
@@ -14,7 +14,7 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
         protected $plugin_icon;
         protected $menu_parent = 'options-general.php';
         protected $license_message = '';
-        public static $version = '1.3.7';
+        public static $version = '1.260101';
 
         public function __construct( $slug, $url, $group, $icon = '', $parent = 'options-general.php' ) {
             $this->plugin_slug   = $slug;

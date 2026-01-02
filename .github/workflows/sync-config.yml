@@ -7,7 +7,8 @@ group:
         dest: core/assets/
         
     repos:
-      - thisismyurl/thisismyurl-svg-support
-      - thisismyurl/thisismyurl-webp-support
-      - thisismyurl/thisismyurl-heic-support
-      - thisismyurl/thisismyurl-external-link-control
+#      - thisismyurl/thisismyurl-avif-support
+#      - thisismyurl/thisismyurl-svg-support
+#      - thisismyurl/thisismyurl-heic-support
+#      - thisismyurl/thisismyurl-webp-support
+#      - thisismyurl/thisismyurl-list-support

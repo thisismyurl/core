@@ -14,6 +14,7 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
         protected $plugin_icon;
         protected $menu_parent = 'options-general.php';
         protected $license_message = '';
+        protected $settings_blueprint = []; 
         public static $version = '1.260101';
 
         public function __construct( $slug, $url, $group, $icon = '', $parent = 'options-general.php' ) {
@@ -158,32 +159,40 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
         }
 
         protected function render_core_header() {
-            $fs = $this->init_fs();
-            $icon_rel = 'assets/icon.png';
-            $icon_path = WP_PLUGIN_DIR . '/' . $this->plugin_slug . '/' . $icon_rel;
-            
-            if ( ! empty( $this->plugin_icon ) ) {
-                $icon_url = $this->plugin_icon;
-            } elseif ( $fs->exists( $icon_path ) ) {
-                $icon_url = $this->plugin_url . $icon_rel;
-            } else {
-                $icon_url = $this->plugin_url . 'core/assets/default-icon.png';
-            }
+    $fs = $this->init_fs();
+    $icon_rel = 'assets/icon.png';
+    $icon_path = WP_PLUGIN_DIR . '/' . $this->plugin_slug . '/' . $icon_rel;
+    $icon_url = '';
 
-            $donate_url = 'https://thisismyurl.com/donate/?source=' . urlencode( $this->plugin_slug );
-            ?>
-            <div class="timu-header">
-                <img src="<?php echo esc_url( $icon_url ); ?>" alt="<?php esc_attr_e( 'Plugin Icon', 'timu' ); ?>">
-                <h1>
-                    <?php echo esc_html( get_admin_page_title() ); ?> 
-                    <span class="agency-by">
-                        <?php esc_html_e( 'by', 'timu' ); ?> 
-                        <a href="<?php echo esc_url( $donate_url ); ?>" target="_blank" style="text-decoration: none; color: #888;">thisismyurl.com</a>
-                    </span>
-                </h1>
-            </div>
-            <?php
-        }
+    // 1. Check for custom icon provided in constructor
+    if ( ! empty( $this->plugin_icon ) ) {
+        $icon_url = $this->plugin_icon;
+    } 
+    // 2. Check for icon.png in the specific plugin's assets folder
+    elseif ( $fs->exists( $icon_path ) ) {
+        $icon_url = $this->plugin_url . $icon_rel;
+    } 
+    // 3. Fallback to the shared core default icon
+    elseif ( $fs->exists( WP_PLUGIN_DIR . '/' . $this->plugin_slug . '/core/assets/default-icon.png' ) ) {
+        $icon_url = $this->plugin_url . 'core/assets/default-icon.png';
+    }
+
+    $donate_url = 'https://thisismyurl.com/donate/?source=' . urlencode( $this->plugin_slug );
+    ?>
+    <div class="timu-header">
+        <?php if ( ! empty( $icon_url ) ) : ?>
+            <img src="<?php echo esc_url( $icon_url ); ?>" alt="<?php esc_attr_e( 'Plugin Icon', 'timu' ); ?>">
+        <?php endif; ?>
+        <h1>
+            <?php echo esc_html( get_admin_page_title() ); ?> 
+            <span class="agency-by">
+                <?php esc_html_e( 'by', 'timu' ); ?> 
+                <a href="<?php echo esc_url( $donate_url ); ?>" target="_blank" style="text-decoration: none; color: #888;">thisismyurl.com</a>
+            </span>
+        </h1>
+    </div>
+    <?php
+}
 
         protected function render_core_sidebar( $extra_content = '' ) {
             $fs = $this->init_fs();
@@ -289,14 +298,149 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
             <?php
         }
 
+        /**
+         * Centralized Settings Registration
+         */
+        protected function init_settings_generator( $blueprint ) {
+            $this->settings_blueprint = $blueprint;
 
+            add_action( 'admin_init', function() {
+                register_setting( $this->options_group, $this->plugin_slug . '_options', [
+                    'sanitize_callback' => [ $this, 'sanitize_core_options' ]
+                ]);
 
+                foreach ( $this->settings_blueprint as $section_id => $section ) {
+                    // Register the section
+                    add_settings_section( 
+                        $section_id, 
+                        $section['title'] ?? '', 
+                        null, 
+                        $this->plugin_slug 
+                    );
 
-        protected function render_core_footer() {
+                    // SAFETY: Ensure the 'fields' key exists and is an array before looping
+                    if ( ! isset( $section['fields'] ) || ! is_array( $section['fields'] ) ) {
+                        continue;
+                    }
+
+                    // Iterate ONLY over the fields within this section
+                    foreach ( $section['fields'] as $field_id => $args ) {
+                        add_settings_field(
+                            $field_id,
+                            $args['label'] ?? '', // Safety for missing labels
+                            [ $this, 'render_generated_field' ],
+                            $this->plugin_slug,
+                            $section_id,
+                            array_merge( $args, [ 'id' => $field_id ] )
+                        );
+                    }
+                }
+            });
+        }
+
+        /**
+         * Universal Field Renderer
+         */
+        public function render_generated_field( $args ) {
+    // Safety check: If no type is provided, we can't render the field
+    if ( empty( $args['type'] ) ) {
+        return;
+    }
+
+    $options = $this->get_plugin_option();
+    $value   = $options[ $args['id'] ] ?? ( $args['default'] ?? '' );
+    $name    = $this->plugin_slug . "_options[" . $args['id'] . "]";
+    
+    $dependency_data = '';
+    $classes = 'timu-field-wrapper';
+    
+    if ( ! empty( $args['parent'] ) ) {
+        $classes .= ' timu-child-field';
+        $dependency_data = ' data-parent="' . esc_attr( $args['parent'] ) . '"';
+        if ( isset( $args['parent_value'] ) ) {
+            $dependency_data .= ' data-parent-value="' . esc_attr( $args['parent_value'] ) . '"';
+        }
+    }
+
+    if ( ! empty( $args['is_parent'] ) ) {
+        $classes .= ' timu-parent-control';
+    }
+
+    echo '<div class="' . esc_attr( $classes ) . '"' . $dependency_data . '>';
+
+            switch ( $args['type'] ) {
+                case 'switch':
+                    echo '<label class="timu-switch">';
+                    echo '<input type="checkbox" name="'.esc_attr($name).'" id="'.esc_attr($args['id']).'" value="1" '.checked(1, $value, false).' />';
+                    echo '<span class="timu-slider"></span></label>';
+                    break;
+                case 'radio':
+                    if ( ! empty( $args['options'] ) ) {
+                        foreach ( $args['options'] as $opt_val => $opt_label ) {
+                            echo '<label style="display:block; margin-bottom:5px;">';
+                            echo '<input type="radio" name="'.esc_attr($name).'" value="'.esc_attr($opt_val).'" '.checked($opt_val, $value, false).' /> ';
+                            echo esc_html($opt_label) . '</label>';
+                        }
+                    }
+                    break;
+                case 'select':
+                    echo '<select name="'.esc_attr($name).'" class="regular-text">';
+                    foreach ( $args['options'] as $opt_val => $opt_label ) {
+                        echo '<option value="'.esc_attr($opt_val).'" '.selected($opt_val, $value, false).'>'.esc_html($opt_label).'</option>';
+                    }
+                    echo '</select>';
+                    break;
+                case 'textarea':
+                    echo '<textarea name="'.esc_attr($name).'" class="large-text" rows="5" placeholder="'.esc_attr($args['placeholder'] ?? '').'">'.esc_textarea($value).'</textarea>';
+                    break;
+                case 'number':
+                    echo '<input type="number" name="'.esc_attr($name).'" value="'.esc_attr($value).'" step="'.esc_attr($args['step'] ?? '1').'" min="'.esc_attr($args['min'] ?? '0').'" max="'.esc_attr($args['max'] ?? '').'" class="small-text" />';
+                    break;
+                case 'color':
+                    echo '<input type="text" name="'.esc_attr($name).'" value="'.esc_attr($value).'" class="timu-color-picker" data-default-color="'.esc_attr($args['default'] ?? '#ffffff').'" />';
+                    break;
+                case 'text':
+                default:
+                    echo '<input type="text" name="'.esc_attr($name).'" value="'.esc_attr($value).'" class="regular-text" placeholder="'.esc_attr($args['placeholder'] ?? '').'" />';
+                    break;
+            }
+
+            if ( ! empty( $args['desc'] ) ) {
+                echo '<p class="description">' . wp_kses_post( $args['desc'] ) . '</p>';
+            }
+            echo '</div>';
+        }
+
+        /**
+         * Standardized Page Renderer
+         */
+        public function render_settings_page() {
             ?>
-            <div class="clear"></div>
-            <div class="timu-footer-links" style="margin-top: 50px; border-top: 1px solid #ddd; padding-top: 20px; color: #999; font-size: 11px;">
-                &copy; <?php echo esc_html( date('Y') ); ?> <a href="https://thisismyurl.com/" target="_blank" style="color: #999;">thisismyurl.com</a>
+            <div class="wrap timu-admin-wrap">
+                <?php $this->render_core_header(); ?>
+                <form method="post" action="options.php">
+                    <?php settings_fields( $this->options_group ); ?>
+                    <div id="poststuff">
+                        <div id="post-body" class="metabox-holder columns-2">
+                            <div id="post-body-content">
+                                <?php foreach ( $this->settings_blueprint as $section_id => $section ) : ?>
+                                    <div class="timu-card">
+                                        <div class="timu-card-header"><?php echo esc_html( $section['title'] ); ?></div>
+                                        <div class="timu-card-body">
+                                            <table class="form-table">
+                                                <?php do_settings_fields( $this->plugin_slug, $section_id ); ?>
+                                            </table>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                                <?php $this->render_registration_field(); ?>
+                                <?php submit_button( null, 'primary large' ); ?>
+                            </div>
+                            <?php $this->render_core_sidebar(); ?>
+                        </div>
+                    </div>
+                </form>
+                <?php $this->render_core_footer(); ?>
             </div>
             <?php
         }

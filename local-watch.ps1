@@ -1,11 +1,13 @@
 # Configuration
 $LocalPluginsPath = "C:\Users\Owner\Local Sites\thisismyurlcom\app\public\wp-content\plugins"
 $Plugins = @(
+    "thisismyurl-avif-support",
+    "thisismyurl-heic-support",
     "thisismyurl-svg-support",
     "thisismyurl-webp-support",
-    "thisismyurl-heic-support",
-    "thisismyurl-external-link-control"
+    "thisismyurl-link-support"
 )
+
 
 # The Logic
 $Watcher = New-Object System.IO.FileSystemWatcher

@@ -6,12 +6,16 @@
  * It coordinates sub-modules and handles global licensing/filtering.
  *
  * @package     TIMU_Core
- * @version     1.26010211
+ * @version     1.26010216
+ * 
  */
+
+
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
+
 
 if ( ! class_exists( 'TIMU_Core_v1' ) ) {
 
@@ -58,6 +62,9 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
             if ( method_exists( $this, 'init_updater' ) ) {
                 add_action( 'plugins_loaded', array( $this, 'init_updater' ) );
             }
+
+            add_filter( 'attachment_fields_to_edit', array( $this, 'add_media_sidebar_actions' ), 10, 2 );
+
         }
 
         private function load_components() {
@@ -104,9 +111,7 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
             if ( isset( $this->admin ) ) $this->admin->render_core_sidebar( $extra_content ); 
         }
 
-        public function render_registration_field() { 
-            if ( isset( $this->admin ) ) $this->admin->render_registration_field(); 
-        }
+     
 
         public function render_default_sidebar_actions() {
             if ( isset( $this->admin ) ) {
@@ -214,18 +219,51 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
             // Only load the heavy Bulk/AJAX script on the specific settings page
             if ( isset( $_GET['page'] ) && $_GET['page'] === $this->plugin_slug ) {
                 wp_enqueue_script( 'timu-core-bulk', $this->plugin_url . 'core/assets/shared-bulk.js', array( 'jquery', 'timu-core-ui' ), '1.26', true );
+
+                // Required for Color Picker
+                wp_enqueue_style( 'wp-color-picker' );
+                wp_enqueue_script( 'wp-color-picker' );
+
+                // Required for Media Uploader
+                wp_enqueue_media();
             }
+            
 
             wp_localize_script( 'timu-core-ui', 'timu_core_vars', array(
                 'ajax_url' => admin_url( 'admin-ajax.php' ),
-                'nonce'    => wp_create_nonce( 'timu_install_nonce' )
+                'nonce'    => wp_create_nonce( 'timu_install_nonce' ),
+                'slug'     => $this->plugin_slug
             ) );
         }
 
         
+        /**
+         * Adds custom action links to the plugin entry on the Plugins page.
+         * 
+         *  @param array $links Existing links.
+         *  @return array Modified links.
+         * 
+         */
         public function add_plugin_action_links( $links ) {
-            $settings_url  = admin_url( $this->menu_parent . '?page=' . $this->plugin_slug );
-            $links[] = '<a href="' . esc_url( $settings_url ) . '">Settings</a>';
+            $settings_url = admin_url( $this->menu_parent . '?page=' . $this->plugin_slug );
+            $links[] = '<a href="' . esc_url( $settings_url ) . '">' . esc_html__( 'Settings', 'timu' ) . '</a>';
+
+            // The check now strictly follows the API response
+            if ( $this->is_licensed() ) {
+                $label  = __( 'Support', 'timu' );
+                $anchor = '#support';
+            } else {
+                $label  = __( 'Register', 'timu' );
+                $anchor = '#register';
+            }
+
+            $links[] = sprintf(
+                '<a href="https://thisismyurl.com/%s/%s" target="_blank">%s</a>',
+                esc_attr( $this->plugin_slug ),
+                esc_attr( $anchor ),
+                esc_html( $label )
+            );
+
             return $links;
         }
 
@@ -243,10 +281,45 @@ if ( ! class_exists( 'TIMU_Core_v1' ) ) {
             }, $content );
         }
 
+        /**
+         * Checks if the plugin is currently licensed and registered for this site.
+         * * @return bool True if a valid license is detected.
+         */
         public function is_licensed() {
-            // Placeholder: Replace with actual remote check logic.
-            $this->license_message = 'Active'; 
-            return true; 
+            $key = $this->get_plugin_option( 'license_key', '' );
+
+            // If no key is entered, we don't need to hit the API
+            if ( empty( $key ) ) {
+                $this->license_message = __( 'Please enter your <a href="https://thisismyurl.com/'.$this->plugin_slug.'#register" target="_blank">License Key to register</a>.', 'timu' );
+                return false;
+            }
+
+            $api_url = add_query_arg( array(
+                'url'  => get_site_url(),
+                'item' => $this->plugin_slug, 
+                'key'  => $key
+            ), 'https://thisismyurl.com/wp-json/license-manager/v1/check/' );
+
+            $response = wp_remote_get( $api_url, array( 'timeout' => 15 ) );
+
+            if ( is_wp_error( $response ) ) {
+                $this->license_message = __( 'A connection error has occured, the plugin will not be affected.', 'timu' );
+                return false;
+            }
+
+            $body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+
+
+            // 2. Failure: Capture the specific error message from your JSON API
+            if ( isset( $body['status'] ) && 'active' === $body['status'] ) {
+                $this->license_message = ( $body['message'] );
+                return true;
+            } else {
+                $this->license_message = ( $body['message'] );
+            }
+
+            return false;
         }
 
         public function sanitize_core_options( $input ) {

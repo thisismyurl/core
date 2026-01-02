@@ -1,11 +1,12 @@
 # Configuration
 $LocalPluginsPath = "C:\Users\Owner\Local Sites\thisismyurlcom\app\public\wp-content\plugins"
 $Plugins = @(
-    "thisismyurl-avif-support",
-    "thisismyurl-heic-support",
-    "thisismyurl-svg-support",
-    "thisismyurl-webp-support",
-    "thisismyurl-link-support"
+    "avif-support-thisismyurl",
+    "heic-support-thisismyurl",
+    "svg-support-thisismyurl",
+    "webp-support-thisismyurl",
+    "link-support-thisismyurl",
+    "image-support-thisismyurl"
 )
 
 

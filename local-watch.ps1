@@ -25,18 +25,23 @@ $Action = {
         $FileName = $Event.SourceEventArgs.Name
         Write-Host "`n[Change Detected]: $FileName" -ForegroundColor Yellow
         
+        # Small delay to let the OS release file handles before deletion
+        Start-Sleep -Milliseconds 100
+
         foreach ($Plugin in $Plugins) {
             $Destination = Join-Path $LocalPluginsPath "$Plugin\core"
             
-            # Create directory if it doesn't exist
-            if (!(Test-Path $Destination)) { 
-                New-Item -ItemType Directory -Path $Destination -Force | Out-Null 
+            # Delete the old folder if it exists to ensure a fresh copy
+            if (Test-Path $Destination) { 
+                Write-Host "  Cleaning -> $Plugin\core" -ForegroundColor Gray
+                Remove-Item -Path $Destination -Recurse -Force -ErrorAction SilentlyContinue
             }
             
-            # Report the specific folder being written to
-            Write-Host "  Core -> $Plugin" -ForegroundColor Gray
+            # Re-create the clean directory
+            New-Item -ItemType Directory -Path $Destination -Force | Out-Null 
             
-            # Sync files
+            # Report and Sync
+            Write-Host "  Syncing  -> $Plugin\core" -ForegroundColor Cyan
             Copy-Item -Path ".\*" -Destination $Destination -Recurse -Force -Exclude "*.ps1", ".git*"
         }
         

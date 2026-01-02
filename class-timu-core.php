@@ -6,7 +6,7 @@
  * It coordinates sub-modules and handles global licensing/filtering.
  *
  * @package     TIMU_Core
- * @version     1.260102
+ * @version     1.26010211
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

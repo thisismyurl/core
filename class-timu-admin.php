@@ -6,7 +6,7 @@
  * the Settings API registration, card-based UI rendering, and the paginated logs.
  *
  * @package     TIMU_Core
- * @version     1.260102
+ * @version     1.26010211
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

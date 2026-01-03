@@ -1,21 +1,41 @@
 # 1. Configuration
 $ParentPath = "C:\Users\Owner\Local Sites\thisismyurlcom\app\public\wp-content\plugins"
-$MasterCoreFolderName = "core" 
+$MasterCoreFolderName = "core"
 $MasterCorePath = Join-Path $ParentPath $MasterCoreFolderName
-$GitCmd = "C:\Users\Owner\AppData\Local\GitHubDesktop\app-3.5.4\resources\app\git\cmd\git.exe"
 
-$Plugins = @(
-    "avif-support-thisismyurl",
-    "heic-support-thisismyurl",
-    "media-support-thisismyurl",
-    "link-support-thisismyurl",
-    "svg-support-thisismyurl",
-    "webp-support-thisismyurl"
-)
+# Load Shared List from plugins.json
+$PluginListPath = Join-Path $PSScriptRoot "plugins.json"
+if (Test-Path $PluginListPath) {
+    $Plugins = Get-Content $PluginListPath -Raw | ConvertFrom-Json
+} else {
+    Write-Host "Error: plugins.json not found!" -ForegroundColor Red; exit
+}
 
-# Global variables to handle the hand-off from background to foreground
+# Global variables for background/foreground hand-off
 $Global:SyncPending = $false
 $Global:PendingData = @{}
+
+# Helper: Local Image Processing using ImageMagick
+function Optimize-PluginAssets {
+    param ([string]$AssetDir)
+    
+    $IconSource = Join-Path $AssetDir "icon-512x512.png"
+    $BannerSource = Join-Path $AssetDir "banner-1544x500.png"
+
+    # Generate Icons: 256x256, 128x128, 64x64
+    if (Test-Path $IconSource) {
+        Write-Host "    Processing Icons..." -ForegroundColor Gray
+        & magick $IconSource -resize 256x256 $(Join-Path $AssetDir "icon-256x256.png")
+        & magick $IconSource -resize 128x128 $(Join-Path $AssetDir "icon-128x128.png")
+        & magick $IconSource -resize 64x64 $(Join-Path $AssetDir "icon-64x64.png")
+    }
+
+    # Generate Banner: 772x250
+    if (Test-Path $BannerSource) {
+        Write-Host "    Processing Banner..." -ForegroundColor Gray
+        & magick $BannerSource -resize 772x250 $(Join-Path $AssetDir "banner-772x250.png")
+    }
+}
 
 # 2. Reusable Sync Function
 function Sync-CoreAssets {
@@ -26,10 +46,11 @@ function Sync-CoreAssets {
     )
 
     $NewVersion = "1." + (Get-Date).ToString("yyMMddHH")
-    Write-Host "`n[Processing]: $TriggerFile" -ForegroundColor Yellow
+    Write-Host "`n[Syncing Files]: $TriggerFile" -ForegroundColor Yellow
     
     # Update internal Master Core headers recursively
     if ($IsMasterCoreChange) {
+        Write-Host "  Updating Master Core version headers..." -ForegroundColor Gray
         Get-ChildItem -Path $MasterCorePath -Filter *.php -Recurse | ForEach-Object {
             $C = Get-Content $_.FullName
             if ($C -match '\$version\s*=\s*[''"][0-9.]+[''"]') {
@@ -46,81 +67,55 @@ function Sync-CoreAssets {
 
     foreach ($Plugin in $ActiveTargets) {
         $PluginDir = Join-Path $ParentPath $Plugin
-        $Destination = Join-Path $PluginDir "core"
+        $CoreDest = Join-Path $PluginDir "core"
+        $GithubSource = Join-Path $MasterCorePath ".github"
+        $GithubDest = Join-Path $PluginDir ".github"
         $MainPhpFile = Join-Path $PluginDir "$Plugin.php"
         $ReadmeFile = Join-Path $PluginDir "readme.txt"
+        $AssetDir = Join-Path $PluginDir "assets"
 
         if (Test-Path $PluginDir) {
-            # Sync Core folder
+            Write-Host "  Syncing: $Plugin" -ForegroundColor Cyan
+            
+            # --- 1. Sync Core folder ---
             if ($IsMasterCoreChange) {
-                if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force -ErrorAction SilentlyContinue }
-                New-Item -ItemType Directory -Path $Destination -Force | Out-Null
-                Copy-Item -Path "$MasterCorePath\*" -Destination $Destination -Recurse -Force -Exclude ".git*", "*.ps1"
+                if (![string]::IsNullOrWhiteSpace($CoreDest) -and (Test-Path -LiteralPath $CoreDest)) { 
+                    Remove-Item -LiteralPath $CoreDest -Recurse -Force -ErrorAction SilentlyContinue 
+                }
+                New-Item -ItemType Directory -Path $CoreDest -Force | Out-Null
+                Copy-Item -Path "$MasterCorePath\*" -Destination $CoreDest -Recurse -Force -Exclude ".git*", ".github*", "*.ps1"
             }
 
-            # Update Plugin Version and Readme
+            # --- 2. Sync and Personalize .github folder ---
+            if ($IsMasterCoreChange -and (Test-Path $GithubSource)) {
+                if (Test-Path $GithubDest) { Remove-Item $GithubDest -Recurse -Force -ErrorAction SilentlyContinue }
+                Copy-Item -Path $GithubSource -Destination $GithubDest -Recurse -Force
+                
+                # Update foldername and name inside the .github files
+                Get-ChildItem -Path $GithubDest -File -Recurse | ForEach-Object {
+                    (Get-Content $_.FullName) `
+                        -replace '{{PLUGIN_SLUG}}', $Plugin `
+                        -replace '{{PLUGIN_NAME}}', ($Plugin -replace '-', ' ' | ForEach-Object { (Get-Culture).TextInfo.ToTitleCase($_) }) `
+                        | Set-Content $_.FullName
+                }
+            }
+
+            # --- 3. Process Images locally ---
+            if (Test-Path $AssetDir) {
+                Optimize-PluginAssets -AssetDir $AssetDir
+            }
+
+            # --- 4. Update Versioning (Readme Changelog update removed) ---
             if (Test-Path $MainPhpFile) {
                 (Get-Content $MainPhpFile) -replace '(Version:\s+)([0-9.]+)', "`${1}$NewVersion" | Set-Content $MainPhpFile
             }
             if (Test-Path $ReadmeFile) {
-                $ReadmeContent = Get-Content $ReadmeFile
-                $ReadmeContent = $ReadmeContent -replace '(Stable tag:\s+)([0-9.]+)', "`${1}$NewVersion"
-                $Entry = "`n= $NewVersion =`n* Core hierarchy updated via $TriggerFile"
-                $ReadmeContent = $ReadmeContent -replace '(== Changelog ==)', "`$1`n$Entry"
-                $ReadmeContent | Set-Content $ReadmeFile
+                # Only update the Stable tag; do not append to Changelog
+                (Get-Content $ReadmeFile) -replace '(Stable tag:\s+)([0-9.]+)', "`${1}$NewVersion" | Set-Content $ReadmeFile
             }
         }
     }
-
-    # --- TIMED COMMIT PROMPT (3s) ---
-    # This now runs in the main thread, so it won't jam.
-    Write-Host "`nSync Complete. Commit all changes? (y/N) [3s timeout]: " -NoNewline -ForegroundColor White
-    $timeout = 3
-    $CommitDecision = $false
-    
-    while ($timeout -gt 0 -and -not [Console]::KeyAvailable) {
-        Start-Sleep -Seconds 1
-        $timeout--
-    }
-
-    if ([Console]::KeyAvailable) {
-        $Key = [Console]::ReadKey($true)
-        if ($Key.KeyChar -eq 'y') { $CommitDecision = $true }
-    }
-
-    if ($CommitDecision) {
-        Write-Host "`nCommitting updates..." -ForegroundColor Cyan
-        foreach ($Plugin in $ActiveTargets) {
-            $PluginDir = Join-Path $ParentPath $Plugin
-            if (Test-Path (Join-Path $PluginDir ".git")) {
-                Push-Location $PluginDir
-                if (& $GitCmd status --porcelain) {
-                    & $GitCmd add .
-                    & $GitCmd commit -m "Build ${NewVersion}: Update via ${TriggerFile}" --quiet
-                    Write-Host "  ${Plugin}: Changes committed locally." -ForegroundColor Cyan
-                }
-                Pop-Location
-            }
-        }
-
-        # --- PUSH PROMPT (Only if committed) ---
-        Write-Host "Push all changes to GitHub? (y/N): " -NoNewline -ForegroundColor White
-        $PushResponse = Read-Host
-        if ($PushResponse -eq 'y') {
-            Write-Host "Pushing updates..." -ForegroundColor Magenta
-            foreach ($Plugin in $ActiveTargets) {
-                $PluginDir = Join-Path $ParentPath $Plugin
-                if (Test-Path (Join-Path $PluginDir ".git")) {
-                    Push-Location $PluginDir
-                    & $GitCmd push origin main --quiet
-                    Pop-Location
-                    Write-Host "  ${Plugin}: Pushed successfully." -ForegroundColor Gray
-                }
-            }
-        }
-    } else {
-        Write-Host "`nSkipping Git operations. Resuming monitor..." -ForegroundColor Gray
-    }
+    Write-Host "`nSync Complete. Local files updated to v$NewVersion." -ForegroundColor Green
 }
 
 # 3. BOOTSTRAP
@@ -135,13 +130,11 @@ $Watcher.EnableRaisingEvents = $true
 
 $Action = {
     $ChangedPath = $Event.SourceEventArgs.FullPath
-    # Ignore git and script files
     if ($ChangedPath -match '\.git' -or $ChangedPath -match '\.ps1$') { return }
 
     $IsMasterCoreChange = $ChangedPath.StartsWith($MasterCorePath + "\") -or ($ChangedPath -eq $MasterCorePath)
     $Targets = if ($IsMasterCoreChange) { $Plugins } else { $Plugins | Where-Object { $ChangedPath -like "*\$_*" } }
 
-    # Instead of running logic here, we signal the main loop
     if ($Targets) {
         $Global:PendingData = @{
             Trigger = $Event.SourceEventArgs.Name
@@ -156,15 +149,11 @@ Register-ObjectEvent $Watcher "Changed" -Action $Action
 
 Write-Host "`n--- Monitoring Active (Main Loop Control) ---" -ForegroundColor Cyan
 while ($true) {
-    # Check if the background watcher flagged a change
     if ($Global:SyncPending) {
         Sync-CoreAssets -TriggerFile $Global:PendingData.Trigger `
                         -IsMasterCoreChange $Global:PendingData.Master `
                         -ActiveTargets $Global:PendingData.Targets
-        # Reset flag
         $Global:SyncPending = $false
     }
-    
-    # Small sleep to keep CPU usage low while waiting for flags
     Start-Sleep -Milliseconds 500
 }

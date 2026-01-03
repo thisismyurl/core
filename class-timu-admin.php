@@ -74,7 +74,9 @@ class TIMU_Admin_v1 {
     
 public function render_generated_field( $args ) {
     $options = $this->core->get_plugin_option();
-    $value   = $options[ $args['id'] ] ?? ( $args['default'] ?? '' );
+    $value   = isset($options[ $args['id'] ]) && '' !== $options[ $args['id'] ] 
+            ? $options[ $args['id'] ] 
+           : ( $args['default'] ?? '' );
     $name    = "{$this->core->plugin_slug}_options[{$args['id']}]";
     
     $is_master = ( 'enabled' === $args['id'] ) ? ' timu-master-toggle' : '';
@@ -89,20 +91,18 @@ public function render_generated_field( $args ) {
     echo '<div class="timu-field-wrapper' . esc_attr( $is_master ) . '"' . $conditional_attrs . '>';
     
     switch ( $args['type'] ) {
-        case 'switch':
-            echo '<label class="timu-switch">';
             echo '<input type="checkbox" name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" value="1" ' . checked( 1, (int)$value, false ) . ' />';
             echo '<span class="timu-slider"></span></label>';
             break;
 
-        case 'range': // NEW: Interactive Slider for Quality
+        case 'range':
             echo '<div class="timu-range-container" style="display:flex; align-items:center; gap:12px;">';
             echo '<input type="range" name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" value="' . esc_attr( $value ) . '" step="' . esc_attr( $args['step'] ?? '1' ) . '" min="' . esc_attr( $args['min'] ?? '0' ) . '" max="' . esc_attr( $args['max'] ?? '100' ) . '" oninput="this.nextElementSibling.value = this.value" style="flex-grow:1;" />';
             echo '<output style="font-weight:bold; min-width:30px;">' . esc_html( $value ) . '</output>%';
             echo '</div>';
             break;
 
-        case 'select': // NEW: Dropdown for Handling Modes
+        case 'select':
             echo '<select name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" class="regular-text">';
             foreach ( (array)$args['options'] as $opt_val => $opt_label ) {
                 echo '<option value="' . esc_attr( $opt_val ) . '" ' . selected( $value, $opt_val, false ) . '>' . esc_html( $opt_label ) . '</option>';
@@ -110,7 +110,7 @@ public function render_generated_field( $args ) {
             echo '</select>';
             break;
 
-        case 'multicheck': // NEW: For excluding specific image sizes
+        case 'multicheck':
             echo '<div class="timu-multicheck-list" style="max-height:150px; overflow-y:auto; background:#f6f7f7; padding:10px; border:1px solid #dcdcde;">';
             foreach ( (array)$args['options'] as $opt_val => $opt_label ) {
                 $checked = ( is_array( $value ) && in_array( $opt_val, $value ) ) ? 'checked' : '';
@@ -121,7 +121,7 @@ public function render_generated_field( $args ) {
             echo '</div>';
             break;
 
-        case 'media': // NEW: For Watermarking or Brand Logos
+        case 'media':
             echo '<div class="timu-media-uploader">';
             echo '<input type="text" name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" value="' . esc_attr( $value ) . '" class="regular-text" style="display:block; margin-bottom:5px;" />';
             echo '<button type="button" class="button media_btn" data-target="#' . esc_attr( $args['id'] ) . '">' . esc_html__('Select Image', 'timu') . '</button>';
@@ -129,14 +129,23 @@ public function render_generated_field( $args ) {
             break;
 
         case 'radio':
-            if ( ! empty( $args['options'] ) ) {
-                foreach ( $args['options'] as $opt_val => $opt_label ) {
-                    echo '<label style="display:block; margin-bottom:5px;">';
-                    echo '<input type="radio" name="' . esc_attr( $name ) . '" value="' . esc_attr( $opt_val ) . '" ' . checked( $opt_val, $value, false ) . ' class="timu-conditional-trigger" /> ';
-                    echo esc_html( $opt_label ) . '</label>';
-                }
-            }
-            break;
+    if ( ! empty( $args['options'] ) ) {
+        // Force the first option as the value if the current value is empty or null
+        if ( empty( $value ) ) {
+            $value = array_key_first( $args['options'] );
+        }
+
+        foreach ( $args['options'] as $opt_val => $opt_label ) {
+            // WordPress checked() returns checked='checked' if $opt_val == $value
+            $checked_attr = checked( $opt_val, $value, false );
+
+            echo '<label style="display:block; margin-bottom:5px;">';
+            echo '<input type="radio" name="' . esc_attr( $name ) . '" value="' . esc_attr( $opt_val ) . '" ' . $checked_attr . ' class="timu-conditional-trigger" /> ';
+            echo esc_html( $opt_label ) . '</label>';
+        }
+    }
+    break;
+            
         case 'color': // NEW: WordPress Native Color Picker
             echo '<input type="text" name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" value="' . esc_attr( $value ) . '" class="timu-color-picker" data-default-color="' . esc_attr( $args['default'] ?? '#2271b1' ) . '" />';
             break;
@@ -176,9 +185,6 @@ public function render_generated_field( $args ) {
             echo '<input type="text" name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" value="' . esc_attr( $value ) . '" class="regular-text" />';
             echo '</div>';
             break;
-
-
-
         default:
             echo '<input type="' . esc_attr( $args['type'] ) . '" name="' . esc_attr( $name ) . '" id="' . esc_attr( $args['id'] ) . '" value="' . esc_attr( $value ) . '" class="regular-text" />';
             break;
@@ -189,12 +195,8 @@ public function render_generated_field( $args ) {
     }
     echo '</div>';
 }
-
-
     public function render_progress_bar($percent = 0) {
-    echo '<div class="timu-progress-wrap" style="background:#dcdcde; height:20px; border-radius:10px; overflow:hidden; margin:10px 0;">';
-    echo '<div class="timu-progress-bar" style="width:' . (int)$percent . '%; background:#46b450; height:100%; transition: width 0.3s ease;"></div>';
-    echo '</div>';
+ 
 }
 
 public function render_nav_tabs() {
@@ -229,9 +231,6 @@ public function render_admin_notices() {
         echo '<div class="notice notice-success is-dismissible"><p>' . __('Settings saved successfully.', 'timu') . '</p></div>';
     }
 }
-
-
-
 public function add_media_sidebar_actions( $form_fields, $post ) {
     $form_fields['timu_optimization'] = array(
         'label' => __('Optimization', 'timu'),
